@@ -1,4 +1,4 @@
-name: Deploy Lambda@Edge
+name: Deploy Image Resize Dev Lambda@Edge
 
 on:
   push:
