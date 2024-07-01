@@ -1,15 +1,15 @@
-const AWS = require("aws-sdk");
-const { handler } = require("../dist/index");
+const { S3Client } = require("@aws-sdk/client-s3");
+const { handler } = require("../src/index");
 const fs = require("fs");
 const path = require("path");
 
-jest.mock("aws-sdk", () => {
-  const S3 = {
-    getObject: jest.fn().mockReturnThis(),
-    promise: jest.fn(),
-  };
+jest.mock("@aws-sdk/client-s3", () => {
+  const mockSend = jest.fn();
   return {
-    S3: jest.fn(() => S3),
+    S3Client: jest.fn(() => ({
+      send: mockSend,
+    })),
+    GetObjectCommand: jest.fn(),
   };
 });
 
@@ -18,7 +18,10 @@ describe("Lambda@Edge Handler", () => {
     const imagePath = path.resolve(__dirname, "./test.png");
     const imageBuffer = fs.readFileSync(imagePath);
 
-    AWS.S3().getObject().promise.mockResolvedValue({ Body: imageBuffer });
+    const mockS3Client = new S3Client({});
+    mockS3Client.send.mockResolvedValue({
+      Body: imageBuffer,
+    });
 
     const event = {
       Records: [
