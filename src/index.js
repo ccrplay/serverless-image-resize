@@ -1,16 +1,16 @@
 "use strict";
 
 const querystring = require("querystring"); // Don't install.
-const AWS = require("aws-sdk"); // Don't install.
+
+const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 
 // http://sharp.pixelplumbing.com/en/stable/api-resize/
 const Sharp = require("sharp");
 
-const S3 = new AWS.S3({
+const s3Client = new S3Client({
   region: "ap-northeast-2", // 버킷을 생성한 리전 입력(여기선 서울)
 });
 
-// const BUCKET = process.env.BUCKET;
 const BUCKET = require("./config").BUCKET;
 
 // Image types that can be handled by Sharp
@@ -64,14 +64,6 @@ exports.handler = async (event, context, callback) => {
 
   if (!supportImageTypes.some(type => type === extension)) {
     console.log("Unsupported image type:", extension);
-    // responseHandler(
-    //   403,
-    //   'Forbidden',
-    //   'Unsupported image type', [{
-    //     key: 'Content-Type',
-    //     value: 'text/plain'
-    //   }],
-    // );
 
     return callback(null, response);
   }
@@ -81,19 +73,16 @@ exports.handler = async (event, context, callback) => {
   console.log("S3 Object key:", ObjectKey);
 
   try {
-    s3Object = await S3.getObject({
+    const getObjectCommand = new GetObjectCommand({
       Bucket: BUCKET,
       Key: ObjectKey,
-    }).promise();
+    });
+    s3Object = await s3Client.send(getObjectCommand);
 
     console.log("S3 Object:", s3Object);
   } catch (error) {
     console.log("The image does not exist:", error);
-    // responseHandler(
-    //   404,
-    //   'Not Found',
-    //   'The image does not exist.', [{ key: 'Content-Type', value: 'text/plain' }],
-    // );
+
     return callback(null, response);
   }
 
@@ -116,14 +105,7 @@ exports.handler = async (event, context, callback) => {
       .toBuffer();
   } catch (error) {
     console.log("Internal Server Error", error);
-    // responseHandler(
-    //   500,
-    //   'Internal Server Error',
-    //   'Fail to resize image.', [{
-    //     key: 'Content-Type',
-    //     value: 'text/plain'
-    //   }],
-    // );
+
     return callback(null, response);
   }
 

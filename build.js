@@ -12,6 +12,7 @@ const build = () =>
       target: "node20",
       outfile: "dist/index.js",
       external: ["sharp"], // aws-sdk는 lambda runtime에 포함되어 있고, sharp는 바이너리 파일때문에 external로 설정
+      minify: true,
     })
     .catch(error => {
       console.log(error);

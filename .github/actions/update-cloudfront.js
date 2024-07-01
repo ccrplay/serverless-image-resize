@@ -1,7 +1,12 @@
-const AWS = require("aws-sdk");
+const {
+  CloudFrontClient,
+  GetDistributionConfigCommand,
+  UpdateDistributionCommand,
+} = require("@aws-sdk/client-cloudfront");
+const { LambdaClient, GetFunctionCommand } = require("@aws-sdk/client-lambda");
 
-const cloudfront = new AWS.CloudFront();
-const lambda = new AWS.Lambda();
+const cloudfront = new CloudFrontClient();
+const lambda = new LambdaClient();
 const distributionId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
 const lambdaFunctionName = process.env.LAMBDA_FUNCTION_NAME;
 const lambdaFunctionVersion = process.env.LAMBDA_FUNCTION_VERSION;
@@ -9,15 +14,15 @@ const lambdaFunctionVersion = process.env.LAMBDA_FUNCTION_VERSION;
 async function updateCloudFrontDistribution() {
   try {
     // Get Lambda function ARN
-    const lambdaResult = await lambda
-      .getFunction({ FunctionName: lambdaFunctionName })
-      .promise();
+    const lambdaResult = await lambda.send(
+      new GetFunctionCommand({ FunctionName: lambdaFunctionName })
+    );
     const lambdaArn = `${lambdaResult.Configuration.FunctionArn}:${lambdaFunctionVersion}`;
 
     // Get current CloudFront distribution config
-    const distributionConfigResult = await cloudfront
-      .getDistributionConfig({ Id: distributionId })
-      .promise();
+    const distributionConfigResult = await cloudfront.send(
+      new GetDistributionConfigCommand({ Id: distributionId })
+    );
     const etag = distributionConfigResult.ETag;
     const distributionConfig = distributionConfigResult.DistributionConfig;
 
@@ -47,7 +52,7 @@ async function updateCloudFrontDistribution() {
       DistributionConfig: distributionConfig,
     };
 
-    await cloudfront.updateDistribution(updateParams).promise();
+    await cloudfront.send(new UpdateDistributionCommand(updateParams));
     console.log("CloudFront distribution updated successfully");
   } catch (error) {
     console.error("Error updating CloudFront distribution:", error);
