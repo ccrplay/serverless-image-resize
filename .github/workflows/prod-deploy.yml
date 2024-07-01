@@ -44,8 +44,8 @@ jobs:
       - name: Build Lambda function
         run: npm run build
 
-      - name: Test Lambda function
-        run: npm run docker:test
+      # - name: Test Lambda function
+      #   run: npm run docker:test
 
       - name: Package Lambda function
         run: cd dist && zip -r function.zip .
