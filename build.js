@@ -9,7 +9,7 @@ const build = () =>
       entryPoints: ["src/index.js"],
       bundle: true,
       platform: "node",
-      target: "node16",
+      target: "node20",
       outfile: "dist/index.js",
       external: ["aws-sdk", "sharp"], // aws-sdk는 lambda runtime에 포함되어 있고, sharp는 바이너리 파일때문에 external로 설정
     })
