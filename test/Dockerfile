@@ -1,6 +1,6 @@
-FROM amazonlinux:2
+FROM amazonlinux:latest
 
-RUN curl -sL https://rpm.nodesource.com/setup_20.x | bash - \
+RUN curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - \
     && yum install -y nodejs \
     && yum clean all
 
