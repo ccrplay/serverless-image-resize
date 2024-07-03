@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "build": "node build.js",
-    "docker:test": "docker build --platform linux/amd64 -f test/Dockerfile -t image-resize-test . && docker run --rm image-resize-test"
+    "build": "node build.js"
   },
   "keywords": [],
   "author": "",
