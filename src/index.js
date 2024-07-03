@@ -14,139 +14,155 @@ const s3Client = new S3Client({
 const BUCKET = require("./config").BUCKET;
 
 // Image types that can be handled by Sharp
-const supportImageTypes = ["jpg", "jpeg", "png", "gif", "webp", "svg", "tiff"];
+const SUPPORT_IMAGE_TYPES = [
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "svg",
+  "tiff",
+];
 
-exports.handler = async (event, context, callback) => {
-  const { request, response } = event.Records[0].cf;
+const streamToBuffer = stream => {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", chunk => chunks.push(chunk));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+};
 
-  // console.log("request: ", request)
-  // console.log("response: ", response)
+const getImageFromS3 = ({ Bucket, Key }) => {
+  return new Promise((resolve, reject) => {
+    console.log("objectKey : ", Key);
+    s3Client
+      .send(
+        new GetObjectCommand({
+          Bucket,
+          Key,
+        })
+      )
+      .then(resolve)
+      .catch(reject);
+  });
+};
 
-  // Parameters are w, h, f, q and indicate width, height, format and quality.
-  const { uri } = request;
-  // console.log("uri: ", uri)
+const convertString = (string, { from, to }) => {
+  if (!from || !to) return string.toLowerCase();
+  return string.toLowerCase() === from ? to : string.toLowerCase();
+};
 
-  const ObjectKey = decodeURIComponent(uri).substring(1);
-  const params = querystring.parse(request.querystring);
-  const { w, h, q, f } = params;
+const getValidatedQueryParams = request => {
+  return new Promise((resolve, reject) => {
+    const { uri, querystring: query } = request;
+    const { w, h, q, f } = querystring.parse(query);
 
-  // console.log("whqf: ", w,h,q,f)
+    console.log(`params: ${JSON.stringify(querystring.parse(query))}`);
 
-  /**
-   * ex) https://dilgv5hokpawv.cloudfront.net/dev/thumbnail.png?w=200&h=150&f=webp&q=90
-   * - ObjectKey: 'dev/thumbnail.png'
-   * - w: '200'
-   * - h: '150'
-   * - f: 'webp'
-   * - q: '90'
-   */
+    // 크기 조절이 없는 경우 원본 반환.
+    if (!(w || h)) {
+      return reject("No resizing parameters");
+    }
 
-  // 크기 조절이 없는 경우 원본 반환.
-  if (!(w || h)) {
-    return callback(null, response);
-  }
+    const extension = uri.match(/\/?(.*)\.(.*)/)[2].toLowerCase();
 
-  const extension = uri.match(/\/?(.*)\.(.*)/)[2].toLowerCase();
-  const width = parseInt(w, 10) || null; // 기본 Width
-  const height = parseInt(h, 10) || null;
-  const quality = parseInt(q, 10) || 100; // Sharp는 이미지 포맷에 따라서 품질(quality)의 기본값이 다릅니다.
-  let format = (f || extension).toLowerCase();
-  let s3Object;
-  let resizedImage;
+    if (!SUPPORT_IMAGE_TYPES.some(type => type === extension)) {
+      return reject(`Unsupported image type : ${extension}`);
+    }
 
-  // 포맷 변환이 없는 GIF 포맷 요청은 원본 반환.
-  if (extension === "gif" && !f) {
-    return callback(null, response);
-  }
+    const width = parseInt(w, 10) || null;
+    const height = parseInt(h, 10) || null;
+    const quality = parseInt(q, 10) || 100;
+    const format = convertString(f || extension, { from: "jpg", to: "jpeg" });
 
-  // Init format.
-  format = format === "jpg" ? "jpeg" : format;
+    // 포맷 변환이 없는 GIF 포맷 요청은 원본 반환.
+    if (extension === "gif" && !f) {
+      return reject("GIF format without format conversion");
+    }
 
-  if (!supportImageTypes.some(type => type === extension)) {
-    console.log("Unsupported image type:", extension);
+    return resolve({ width, height, quality, format });
+  });
+};
 
-    return callback(null, response);
-  }
+const getResizedImage = (imageBuffer, { width, height, format, quality }) =>
+  new Promise(async (resolve, reject) => {
+    const sharpInstance = Sharp(imageBuffer);
 
-  // Verify For AWS CloudWatch.
-  console.log(`parmas: ${JSON.stringify(params)}`); // Cannot convert object to primitive value.\
-  console.log("S3 Object key:", ObjectKey);
-
-  try {
-    const getObjectCommand = new GetObjectCommand({
-      Bucket: BUCKET,
-      Key: ObjectKey,
-    });
-    s3Object = await s3Client.send(getObjectCommand);
-
-    console.log("S3 Object:", s3Object);
-  } catch (error) {
-    console.log("The image does not exist:", error);
-
-    return callback(null, response);
-  }
-
-  try {
-    const sharpInstance = Sharp(s3Object.Body);
     const { width: originWidth, height: originHeight } =
       await sharpInstance.metadata();
 
     // 원본 이미지보다 크게 요청할 경우 원본 반환.
     if (originWidth < (width ?? 0) || originHeight < (height ?? 0)) {
-      return callback(null, response);
+      return reject("Requested size is larger than the original image");
     }
 
-    resizedImage = await Sharp(s3Object.Body)
+    sharpInstance
       .resize(width, height)
       .toFormat(format, {
         quality,
       })
       .withMetadata() // 이미지 크기조절시 임의로 이미지 회전하는 상황 방지
-      .toBuffer();
-  } catch (error) {
-    console.log("Internal Server Error", error);
+      .toBuffer()
+      .then(resizedImage => {
+        if (Buffer.byteLength(resizedImage, "base64") >= 1048576) {
+          return reject("The response image size is over 1MB");
+        }
+        return resolve(resizedImage);
+      })
+      .catch(error => {
+        return reject(`Sharp Error: ${JSON.stringify(error)}`);
+      });
+  });
+
+exports.handler = async (event, context, callback) => {
+  const { request, response } = event.Records[0].cf;
+
+  const { width, height, quality, format } = await getValidatedQueryParams(
+    request
+  ).catch(error => {
+    console.log("Invalid query parameters", error);
 
     return callback(null, response);
-  }
+  });
 
-  // 응답 이미지 용량이 1MB 이상일 경우 원본 반환.
-  if (Buffer.byteLength(resizedImage, "base64") >= 1048576) {
+  const s3Image = await getImageFromS3({
+    Bucket: BUCKET,
+    Key: decodeURIComponent(request.uri).substring(1),
+  }).catch(error => {
+    console.log("Error from getImageFromS3 : ", error);
+
     return callback(null, response);
-  }
+  });
 
-  responseHandler(
-    200,
-    "OK",
-    resizedImage.toString("base64"),
-    [
+  const imageBuffer = await streamToBuffer(s3Image.Body).catch(error => {
+    console.log("Error from streamToBuffer : ", error);
+
+    return callback(null, response);
+  });
+
+  const resizedImage = await getResizedImage(imageBuffer, {
+    width,
+    height,
+    format,
+    quality,
+  }).catch(error => {
+    console.log("Error from getResizedImage : ", error);
+
+    return callback(null, response);
+  });
+
+  console.log("Success resizing image");
+
+  return callback(null, {
+    ...response,
+    body: resizedImage.toString("base64"),
+    contentHeader: [
       {
         key: "Content-Type",
         value: `image/${format}`,
       },
     ],
-    "base64"
-  );
-
-  /**
-   * @summary response 객체 수정을 위한 wrapping 함수
-   */
-  function responseHandler(
-    status,
-    statusDescription,
-    body,
-    contentHeader,
-    bodyEncoding
-  ) {
-    response.status = status;
-    response.statusDescription = statusDescription;
-    response.body = body;
-    response.headers["content-type"] = contentHeader;
-    if (bodyEncoding) {
-      response.bodyEncoding = bodyEncoding;
-    }
-  }
-
-  console.log("Success resizing image");
-
-  return callback(null, response);
+    bodyEncoding: "base64",
+  });
 };
