@@ -39,13 +39,13 @@ npm run build
 
 Docker를 사용하여 Lambda 환경과 유사한 환경에서 테스트를 실행합니다. \
 코드가 번들링되기 전에 테스트를 실행합니다. \
-테스트는 `amazonlinux:latest` 이미지를 기반으로 Node.js 20이 설치된 도커 환경에서 실행됩니다. \
-테스트 명령어는 아래와 같습니다.\
+
 테스트는 `Github Actions workflows`를 통한 배포 과정에 포함되어 있으며, \
-테스트 실패 시 배포는 중단됩니다.
+테스트 실패 시 배포는 중단됩니다. \
+테스트 명령어는 아래와 같습니다.
 
 ```bash
-npm run docker:test
+npm run test
 ```
 
 ## 배포
@@ -57,7 +57,7 @@ npm run docker:test
 1. AWS 자격 증명을 설정합니다.
 2. Node.js 환경을 설정합니다.
 3. 의존성을 설치합니다.
-4. Docker를 사용하여 Lambda 환경과 유사한 환경에서 테스트를 실행합니다.
+4. 코드를 테스트합니다.
 5. 코드를 빌드합니다.
 6. Lambda 함수를 업데이트하고 버전을 발행합니다.
 7. CloudFront 배포를 업데이트하여 Lambda@Edge 함수를 배포합니다.
